@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+*.egg-info/
+
+# uv and tooling
+.uv-cache/
+.pytest_cache/
+.ruff_cache/
+
+# Generated experiment outputs
+logs/*
+!logs/.gitkeep
+models/*
+!models/.gitkeep
+
+# Keep report evidence plots and screenshots tracked
+assets/*.png
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/

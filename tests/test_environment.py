@@ -34,6 +34,14 @@ def test_step_contract_and_twelve_hour_limit():
             assert truncated
 
 
+def test_critical_state_termination_and_truncation():
+    env = ElderCareEnv(max_steps=12, critical_threshold=1.1, critical_indicator_count=1)
+    env.reset(seed=11)
+    _, _, terminated, truncated, _ = env.step(env.action_space.sample())
+    assert terminated
+    assert not truncated
+
+
 def test_gymnasium_checker():
     from gymnasium.utils.env_checker import check_env
 

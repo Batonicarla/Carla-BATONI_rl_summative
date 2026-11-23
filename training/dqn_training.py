@@ -129,21 +129,25 @@ def run_dqn_experiment(run_id: int, episodes: int, seed: int, config: dict) -> d
 
 
 def run_dqn_experiments(episodes: int, run_count: int, seed: int) -> list[dict]:
-    base = {
-        "learning_rate": 1e-3, "gamma": 0.99, "batch_size": 64,
-        "replay_capacity": 10_000, "epsilon_start": 1.0,
-        "epsilon_end": 0.05, "epsilon_decay": 0.995,
-        "target_update": 100, "hidden_size": 64,
-    }
+    configurations = [
+        {"learning_rate": 2.5e-4, "gamma": 0.95, "batch_size": 32, "replay_capacity": 5000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.97, "target_update": 25, "hidden_size": 64},
+        {"learning_rate": 5e-4, "gamma": 0.97, "batch_size": 64, "replay_capacity": 10000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.985, "target_update": 50, "hidden_size": 64},
+        {"learning_rate": 1e-3, "gamma": 0.99, "batch_size": 128, "replay_capacity": 20000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.995, "target_update": 100, "hidden_size": 64},
+        {"learning_rate": 2e-3, "gamma": 0.995, "batch_size": 32, "replay_capacity": 5000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.999, "target_update": 200, "hidden_size": 64},
+        {"learning_rate": 4e-3, "gamma": 0.95, "batch_size": 64, "replay_capacity": 10000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.97, "target_update": 25, "hidden_size": 64},
+        {"learning_rate": 2.5e-4, "gamma": 0.97, "batch_size": 128, "replay_capacity": 20000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.985, "target_update": 50, "hidden_size": 64},
+        {"learning_rate": 5e-4, "gamma": 0.99, "batch_size": 32, "replay_capacity": 5000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.995, "target_update": 100, "hidden_size": 64},
+        {"learning_rate": 1e-3, "gamma": 0.995, "batch_size": 64, "replay_capacity": 10000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.999, "target_update": 200, "hidden_size": 64},
+        {"learning_rate": 2e-3, "gamma": 0.95, "batch_size": 128, "replay_capacity": 20000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.97, "target_update": 25, "hidden_size": 64},
+        {"learning_rate": 4e-3, "gamma": 0.99, "batch_size": 64, "replay_capacity": 10000, "epsilon_start": 1.0, "epsilon_end": 0.05, "epsilon_decay": 0.985, "target_update": 50, "hidden_size": 64},
+    ]
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    (log_dir / "dqn_experiments.json").write_text("", encoding="utf-8")
+
     runs = []
-    for run_id in range(1, run_count + 1):
-        config = dict(base)
-        config["learning_rate"] *= [0.25, 0.5, 1.0, 2.0, 4.0][(run_id - 1) % 5]
-        config["gamma"] = [0.95, 0.97, 0.99, 0.995][(run_id - 1) % 4]
-        config["batch_size"] = [32, 64, 128][(run_id - 1) % 3]
-        config["replay_capacity"] = [2_000, 5_000, 10_000, 20_000][(run_id - 1) % 4]
-        config["epsilon_decay"] = [0.97, 0.985, 0.995, 0.999][(run_id - 1) % 4]
-        config["target_update"] = [25, 50, 100, 200][(run_id - 1) % 4]
+    for run_id in range(1, min(run_count, len(configurations)) + 1):
+        config = dict(configurations[run_id - 1])
         result = run_dqn_experiment(run_id, episodes, seed + run_id * 100, config)
         runs.append(result)
         print(f"[DQN {run_id}/{run_count}] mean={result['evaluation_mean_reward']:.3f}")

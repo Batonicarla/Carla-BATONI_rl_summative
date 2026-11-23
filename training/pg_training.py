@@ -282,40 +282,58 @@ def save_pg_run(algorithm: str, run_id: int, seed: int, config: dict, result: tu
 
 
 def run_pg_experiments(algorithm: str, episodes: int, run_count: int, seed: int) -> list[dict]:
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    (log_dir / f"{algorithm}_experiments.json").write_text("", encoding="utf-8")
+
     runs = []
-    for run_id in range(1, run_count + 1):
+    if algorithm == "reinforce":
+        configurations = [
+            {"learning_rate": 3e-4, "gamma": 0.95, "hidden_size": 32, "normalize_returns": False, "entropy_coefficient": 0.0},
+            {"learning_rate": 5e-4, "gamma": 0.97, "hidden_size": 64, "normalize_returns": True, "entropy_coefficient": 0.01},
+            {"learning_rate": 1e-3, "gamma": 0.99, "hidden_size": 128, "normalize_returns": False, "entropy_coefficient": 0.02},
+            {"learning_rate": 2e-3, "gamma": 0.995, "hidden_size": 32, "normalize_returns": True, "entropy_coefficient": 0.05},
+            {"learning_rate": 3e-4, "gamma": 0.95, "hidden_size": 64, "normalize_returns": False, "entropy_coefficient": 0.0},
+            {"learning_rate": 5e-4, "gamma": 0.97, "hidden_size": 128, "normalize_returns": True, "entropy_coefficient": 0.01},
+            {"learning_rate": 1e-3, "gamma": 0.99, "hidden_size": 32, "normalize_returns": False, "entropy_coefficient": 0.02},
+            {"learning_rate": 2e-3, "gamma": 0.995, "hidden_size": 64, "normalize_returns": True, "entropy_coefficient": 0.05},
+            {"learning_rate": 3e-4, "gamma": 0.95, "hidden_size": 128, "normalize_returns": False, "entropy_coefficient": 0.0},
+            {"learning_rate": 5e-4, "gamma": 0.97, "hidden_size": 32, "normalize_returns": True, "entropy_coefficient": 0.01},
+        ]
+    elif algorithm == "ppo":
+        configurations = [
+            {"learning_rate": 3e-4, "gamma": 0.95, "clip_epsilon": 0.1, "gae_lambda": 0.90, "epochs": 3, "value_coefficient": 0.25, "entropy_coefficient": 0.0, "hidden_size": 32, "normalize_advantages": False},
+            {"learning_rate": 5e-4, "gamma": 0.97, "clip_epsilon": 0.2, "gae_lambda": 0.95, "epochs": 5, "value_coefficient": 0.50, "entropy_coefficient": 0.01, "hidden_size": 64, "normalize_advantages": True},
+            {"learning_rate": 1e-3, "gamma": 0.99, "clip_epsilon": 0.3, "gae_lambda": 0.98, "epochs": 10, "value_coefficient": 1.00, "entropy_coefficient": 0.02, "hidden_size": 128, "normalize_advantages": False},
+            {"learning_rate": 2e-3, "gamma": 0.995, "clip_epsilon": 0.1, "gae_lambda": 0.90, "epochs": 3, "value_coefficient": 0.25, "entropy_coefficient": 0.05, "hidden_size": 32, "normalize_advantages": True},
+            {"learning_rate": 3e-4, "gamma": 0.95, "clip_epsilon": 0.2, "gae_lambda": 0.95, "epochs": 5, "value_coefficient": 0.50, "entropy_coefficient": 0.0, "hidden_size": 64, "normalize_advantages": False},
+            {"learning_rate": 5e-4, "gamma": 0.97, "clip_epsilon": 0.3, "gae_lambda": 0.98, "epochs": 10, "value_coefficient": 1.00, "entropy_coefficient": 0.01, "hidden_size": 128, "normalize_advantages": True},
+            {"learning_rate": 1e-3, "gamma": 0.99, "clip_epsilon": 0.1, "gae_lambda": 0.90, "epochs": 3, "value_coefficient": 0.25, "entropy_coefficient": 0.02, "hidden_size": 32, "normalize_advantages": False},
+            {"learning_rate": 2e-3, "gamma": 0.995, "clip_epsilon": 0.2, "gae_lambda": 0.95, "epochs": 5, "value_coefficient": 0.50, "entropy_coefficient": 0.05, "hidden_size": 64, "normalize_advantages": True},
+            {"learning_rate": 3e-4, "gamma": 0.95, "clip_epsilon": 0.3, "gae_lambda": 0.98, "epochs": 10, "value_coefficient": 1.00, "entropy_coefficient": 0.0, "hidden_size": 128, "normalize_advantages": False},
+            {"learning_rate": 5e-4, "gamma": 0.97, "clip_epsilon": 0.1, "gae_lambda": 0.90, "epochs": 3, "value_coefficient": 0.25, "entropy_coefficient": 0.01, "hidden_size": 32, "normalize_advantages": True},
+        ]
+    else:
+        configurations = [
+            {"actor_learning_rate": 3e-4, "critic_learning_rate": 3e-4, "gamma": 0.95, "entropy_coefficient": 0.0, "value_coefficient": 0.25, "rollout_length": 6, "hidden_size": 32},
+            {"actor_learning_rate": 5e-4, "critic_learning_rate": 5e-4, "gamma": 0.97, "entropy_coefficient": 0.01, "value_coefficient": 0.50, "rollout_length": 12, "hidden_size": 64},
+            {"actor_learning_rate": 1e-3, "critic_learning_rate": 1e-3, "gamma": 0.99, "entropy_coefficient": 0.02, "value_coefficient": 1.00, "rollout_length": 24, "hidden_size": 128},
+            {"actor_learning_rate": 2e-3, "critic_learning_rate": 2e-3, "gamma": 0.995, "entropy_coefficient": 0.05, "value_coefficient": 0.25, "rollout_length": 6, "hidden_size": 32},
+            {"actor_learning_rate": 3e-4, "critic_learning_rate": 3e-4, "gamma": 0.95, "entropy_coefficient": 0.0, "value_coefficient": 0.50, "rollout_length": 12, "hidden_size": 64},
+            {"actor_learning_rate": 5e-4, "critic_learning_rate": 5e-4, "gamma": 0.97, "entropy_coefficient": 0.01, "value_coefficient": 1.00, "rollout_length": 24, "hidden_size": 128},
+            {"actor_learning_rate": 1e-3, "critic_learning_rate": 1e-3, "gamma": 0.99, "entropy_coefficient": 0.02, "value_coefficient": 0.25, "rollout_length": 6, "hidden_size": 32},
+            {"actor_learning_rate": 2e-3, "critic_learning_rate": 2e-3, "gamma": 0.995, "entropy_coefficient": 0.05, "value_coefficient": 0.50, "rollout_length": 12, "hidden_size": 64},
+            {"actor_learning_rate": 3e-4, "critic_learning_rate": 3e-4, "gamma": 0.95, "entropy_coefficient": 0.0, "value_coefficient": 1.00, "rollout_length": 24, "hidden_size": 128},
+            {"actor_learning_rate": 5e-4, "critic_learning_rate": 5e-4, "gamma": 0.97, "entropy_coefficient": 0.01, "value_coefficient": 0.25, "rollout_length": 6, "hidden_size": 32},
+        ]
+
+    for run_id in range(1, min(run_count, len(configurations)) + 1):
+        config = configurations[run_id - 1]
         if algorithm == "reinforce":
-            config = {
-                "learning_rate": [3e-4, 5e-4, 1e-3, 2e-3][(run_id - 1) % 4],
-                "gamma": [0.95, 0.97, 0.99, 0.995][(run_id - 1) % 4],
-                "hidden_size": [32, 64, 128][(run_id - 1) % 3],
-                "normalize_returns": run_id % 2 == 0,
-                "entropy_coefficient": [0.0, 0.01, 0.02, 0.05][(run_id - 1) % 4],
-            }
             result = train_reinforce(episodes, seed + run_id * 100, config)
         elif algorithm == "ppo":
-            config = {
-                "learning_rate": [3e-4, 5e-4, 1e-3, 2e-3][(run_id - 1) % 4],
-                "gamma": [0.95, 0.97, 0.99, 0.995][(run_id - 1) % 4],
-                "clip_epsilon": [0.1, 0.2, 0.3][(run_id - 1) % 3],
-                "gae_lambda": [0.9, 0.95, 0.98][(run_id - 1) % 3],
-                "epochs": [3, 5, 10][(run_id - 1) % 3],
-                "value_coefficient": [0.25, 0.5, 1.0][(run_id - 1) % 3],
-                "entropy_coefficient": [0.0, 0.01, 0.02, 0.05][(run_id - 1) % 4],
-                "hidden_size": [32, 64, 128][(run_id - 1) % 3],
-                "normalize_advantages": run_id % 2 == 0,
-            }
             result = train_ppo(episodes, seed + run_id * 100, config)
         else:
-            config = {
-                "actor_learning_rate": [3e-4, 5e-4, 1e-3, 2e-3][(run_id - 1) % 4],
-                "critic_learning_rate": [3e-4, 5e-4, 1e-3, 2e-3][(run_id - 1) % 4],
-                "gamma": [0.95, 0.97, 0.99, 0.995][(run_id - 1) % 4],
-                "entropy_coefficient": [0.0, 0.01, 0.02, 0.05][(run_id - 1) % 4],
-                "value_coefficient": [0.25, 0.5, 1.0][(run_id - 1) % 3],
-                "rollout_length": [6, 12, 24][(run_id - 1) % 3],
-                "hidden_size": [32, 64, 128][(run_id - 1) % 3],
-            }
             result = train_a2c(episodes, seed + run_id * 100, config)
 
         output = save_pg_run(algorithm, run_id, seed + run_id * 100, config, result)

@@ -1,0 +1,11 @@
+run_id,seed,config,evaluation_mean_reward,evaluation_std_reward
+1,142,"{""entropy_coefficient"": 0.0, ""gamma"": 0.95, ""hidden_size"": 32, ""learning_rate"": 0.0003, ""normalize_returns"": false}",-0.6380004831328987,0.4957928726599943
+2,242,"{""entropy_coefficient"": 0.01, ""gamma"": 0.97, ""hidden_size"": 64, ""learning_rate"": 0.0005, ""normalize_returns"": true}",-0.257611788574606,0.6826853093886338
+3,342,"{""entropy_coefficient"": 0.02, ""gamma"": 0.99, ""hidden_size"": 128, ""learning_rate"": 0.001, ""normalize_returns"": false}",-0.005947983127087211,0.31234998826127586
+4,442,"{""entropy_coefficient"": 0.05, ""gamma"": 0.995, ""hidden_size"": 32, ""learning_rate"": 0.002, ""normalize_returns"": true}",0.04389596579968944,0.3128740652576811
+5,542,"{""entropy_coefficient"": 0.0, ""gamma"": 0.95, ""hidden_size"": 64, ""learning_rate"": 0.0003, ""normalize_returns"": false}",-0.2669926145747302,0.4150955047111905
+6,642,"{""entropy_coefficient"": 0.01, ""gamma"": 0.97, ""hidden_size"": 128, ""learning_rate"": 0.0005, ""normalize_returns"": true}",0.10821476875618126,0.4072666021180877
+7,742,"{""entropy_coefficient"": 0.02, ""gamma"": 0.99, ""hidden_size"": 32, ""learning_rate"": 0.001, ""normalize_returns"": false}",-0.37305178027600033,0.2910273520470297
+8,842,"{""entropy_coefficient"": 0.05, ""gamma"": 0.995, ""hidden_size"": 64, ""learning_rate"": 0.002, ""normalize_returns"": true}",1.28737199524045,0.9145852418001186
+9,942,"{""entropy_coefficient"": 0.0, ""gamma"": 0.95, ""hidden_size"": 128, ""learning_rate"": 0.0003, ""normalize_returns"": false}",0.01558773629367366,0.29321204708162546
+10,1042,"{""entropy_coefficient"": 0.01, ""gamma"": 0.97, ""hidden_size"": 32, ""learning_rate"": 0.0005, ""normalize_returns"": true}",0.042869571018964214,0.31999531759574484

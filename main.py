@@ -61,17 +61,49 @@ def main() -> None:
         import torch
 
         from environment.custom_env import ElderCareEnv
-        from training.dqn_training import QNetwork
-
         policy = None
         if args.algorithm == "dqn":
-            checkpoint = Path("models/dqn/dqn_run_2.pt")
+            csv_path = Path("logs/dqn_experiments.csv")
+            run_id = 3
+            if csv_path.exists():
+                import csv
+                with csv_path.open("r", encoding="utf-8", newline="") as handle:
+                    rows = list(csv.DictReader(handle))
+                if rows:
+                    run_id = int(max(rows, key=lambda row: float(row["evaluation_mean_reward"]))["run_id"])
+            checkpoint = Path(f"models/dqn/dqn_run_{run_id}.pt")
             if not checkpoint.exists():
                 raise SystemExit(f"Missing best DQN checkpoint: {checkpoint}")
+            from training.dqn_training import QNetwork
             policy = QNetwork(hidden_size=64)
             policy.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
             policy.eval()
-        elif args.algorithm != "random":
+        elif args.algorithm in ("reinforce", "ppo", "a2c"):
+            csv_path = Path(f"logs/{args.algorithm}_experiments.csv")
+            run_id = 1
+            hidden_size = 64
+            if csv_path.exists():
+                import csv, json
+                with csv_path.open("r", encoding="utf-8", newline="") as handle:
+                    rows = list(csv.DictReader(handle))
+                if rows:
+                    best = max(rows, key=lambda row: float(row["evaluation_mean_reward"]))
+                    run_id = int(best["run_id"])
+                    hidden_size = int(json.loads(best["config"])["hidden_size"])
+            checkpoint = Path(f"models/pg/{args.algorithm}_run_{run_id}.pt")
+            if not checkpoint.exists():
+                raise SystemExit(f"Missing {args.algorithm.upper()} checkpoint: {checkpoint}")
+            if args.algorithm == "reinforce":
+                from training.pg_training import PolicyNet
+                policy = PolicyNet(hidden_size=hidden_size)
+            else:
+                from training.pg_training import ActorCriticNet
+                policy = ActorCriticNet(hidden_size=hidden_size)
+            policy.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
+            policy.eval()
+        elif args.algorithm == "random":
+            policy = None
+        else:
             print(f"{args.algorithm.upper()} playback is not yet supported; using random actions.")
 
         env = ElderCareEnv(render_mode="human")
@@ -82,7 +114,9 @@ def main() -> None:
                 action = env.action_space.sample()
             else:
                 with torch.no_grad():
-                    action = int(policy(torch.tensor(obs, dtype=torch.float32)).argmax().item())
+                    output = policy(torch.tensor(obs, dtype=torch.float32))
+                    logits = output[0] if isinstance(output, tuple) else output
+                    action = int(logits.argmax().item())
             obs, reward, terminated, truncated, info = env.step(action)
             cumulative += reward
             env.render()

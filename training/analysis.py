@@ -32,10 +32,27 @@ def rolling_mean(values: list[float], window: int = 10) -> np.ndarray:
     return np.convolve(series, kernel, mode="valid")
 
 
+def episodes_to_convergence(rewards: list[float], window: int = 20, stable_span: int = 50, tolerance: float = 0.05) -> int | None:
+    """Estimate convergence from a stable rolling mean near the final average."""
+    if len(rewards) < window + stable_span:
+        return None
+    rolling = rolling_mean(rewards, window)
+    final_mean = float(np.mean(rewards[-window:]))
+    if abs(final_mean) < 1e-8:
+        return None
+    lower = final_mean * (1.0 - tolerance)
+    upper = final_mean * (1.0 + tolerance)
+    for index in range(len(rolling) - stable_span + 1):
+        segment = rolling[index:index + stable_span]
+        if bool(np.all(segment >= lower) and np.all(segment <= upper)):
+            return int(index + window)
+    return None
+
+
 def _best_record(records: list[dict]) -> dict | None:
     if not records:
         return None
-    return max(records, key=lambda item: (item["evaluation_mean_reward"] - item["evaluation_std_reward"]))
+    return max(records, key=lambda item: (item["evaluation_mean_reward"], -item["evaluation_std_reward"]))
 
 
 def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
@@ -129,6 +146,7 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
             rewards = record["episode_rewards"]
             rolling = rolling_mean(rewards, 20)
             stable_threshold = float(np.mean(rewards[-20:])) if len(rewards) >= 20 else float(np.mean(rewards))
+            convergence_episode = episodes_to_convergence(rewards)
             summary.append({
                 "algorithm": algorithm,
                 "run_id": record["run_id"],
@@ -136,6 +154,7 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
                 "evaluation_std_reward": record["evaluation_std_reward"],
                 "late_mean_reward": stable_threshold,
                 "episodes": len(rewards),
+                "convergence_episode": convergence_episode,
             })
 
     with (logs / "analysis_summary.json").open("w", encoding="utf-8") as handle:

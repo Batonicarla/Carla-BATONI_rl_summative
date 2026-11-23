@@ -42,13 +42,21 @@ class ElderCareEnv(gym.Env[np.ndarray, int]):
 
     metadata = {"render_modes": ["human", "rgb_array", "ansi"], "render_fps": 2}
 
-    def __init__(self, render_mode: str | None = None, max_steps: int = 12):
+    def __init__(
+        self,
+        render_mode: str | None = None,
+        max_steps: int = 12,
+        critical_threshold: float = 0.05,
+        critical_indicator_count: int = 3,
+    ):
         super().__init__()
         if render_mode not in (None, "human", "rgb_array", "ansi"):
             raise ValueError(f"Unsupported render mode: {render_mode}")
 
         self.render_mode = render_mode
         self.max_steps = int(max_steps)
+        self.critical_threshold = float(critical_threshold)
+        self.critical_indicator_count = int(critical_indicator_count)
         self.action_space = spaces.Discrete(8)
         self.observation_space = spaces.Box(
             low=0.0, high=1.0, shape=(8,), dtype=np.float32
@@ -66,6 +74,11 @@ class ElderCareEnv(gym.Env[np.ndarray, int]):
         self._cumulative_reward = 0.0
         self._last_rejected = False
         self._renderer = None
+
+        # Conservative synthetic critical-state termination parameters.
+        self.critical_threshold = critical_threshold
+        self.critical_indicator_count = critical_indicator_count
+        self._critical_state_count = 0
 
     @property
     def np_random(self) -> np.random.Generator:
@@ -107,6 +120,7 @@ class ElderCareEnv(gym.Env[np.ndarray, int]):
         self._last_reward = 0.0
         self._cumulative_reward = 0.0
         self._last_rejected = False
+        self._critical_state_count = 0
 
         info = self._make_info()
         return self._state.copy(), info
@@ -139,7 +153,8 @@ class ElderCareEnv(gym.Env[np.ndarray, int]):
         self._last_reward = float(reward)
         self._cumulative_reward += float(reward)
 
-        terminated = False
+        critical_count = int(np.count_nonzero(self._state[:7] < self.critical_threshold))
+        terminated = critical_count >= self.critical_indicator_count
         truncated = self._step_count >= self.max_steps
 
         info = self._make_info()

@@ -1,37 +1,37 @@
 [
   {
     "algorithm": "dqn",
-    "run_id": 3,
-    "evaluation_mean_reward": 4.389010299816728,
-    "evaluation_std_reward": 0.5849860522173796,
-    "late_mean_reward": 4.247755938604475,
+    "run_id": 2,
+    "evaluation_mean_reward": 1.0935715777203439,
+    "evaluation_std_reward": 0.27921437455165427,
+    "late_mean_reward": 0.9635293091759086,
     "episodes": 300,
     "convergence_episode": null
   },
   {
     "algorithm": "reinforce",
     "run_id": 8,
-    "evaluation_mean_reward": 1.28737199524045,
-    "evaluation_std_reward": 0.9145852418001186,
-    "late_mean_reward": 3.1421916293799885,
+    "evaluation_mean_reward": -1.090582130946219,
+    "evaluation_std_reward": 0.2827825628960092,
+    "late_mean_reward": -0.8241585618201641,
     "episodes": 300,
     "convergence_episode": null
   },
   {
     "algorithm": "ppo",
-    "run_id": 2,
-    "evaluation_mean_reward": 2.6658901295736435,
-    "evaluation_std_reward": 0.6070272003668176,
-    "late_mean_reward": 3.7478895049020644,
+    "run_id": 8,
+    "evaluation_mean_reward": -0.3438723552525043,
+    "evaluation_std_reward": 0.29412657308032963,
+    "late_mean_reward": 0.48303606808930616,
     "episodes": 300,
     "convergence_episode": null
   },
   {
     "algorithm": "a2c",
-    "run_id": 3,
-    "evaluation_mean_reward": 1.6874804783165456,
-    "evaluation_std_reward": 0.635614704309939,
-    "late_mean_reward": 3.335022299908102,
+    "run_id": 8,
+    "evaluation_mean_reward": 0.374461590141058,
+    "evaluation_std_reward": 0.25462545564452815,
+    "late_mean_reward": 0.03839779812283809,
     "episodes": 300,
     "convergence_episode": null
   }

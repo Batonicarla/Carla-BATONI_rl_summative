@@ -1,7 +1,8 @@
 """Fast training-code smoke tests."""
 
 
-def test_dqn_one_episode():
+def test_dqn_one_episode(monkeypatch):
+    from tempfile import TemporaryDirectory
     from training.dqn_training import run_dqn_experiment
 
     config = {
@@ -15,7 +16,9 @@ def test_dqn_one_episode():
         "target_update": 10,
         "hidden_size": 32,
     }
-    result = run_dqn_experiment(9001, 2, 9001, config)
+    with TemporaryDirectory() as temp_dir, monkeypatch.context() as working_directory:
+        working_directory.chdir(temp_dir)
+        result = run_dqn_experiment(9001, 2, 9001, config)
     assert len(result["episode_rewards"]) == 2
 
 

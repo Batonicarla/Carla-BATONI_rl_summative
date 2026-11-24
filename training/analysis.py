@@ -6,8 +6,11 @@ import csv
 import json
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 ALGORITHMS = ("dqn", "reinforce", "ppo", "a2c")
 
@@ -40,8 +43,8 @@ def episodes_to_convergence(rewards: list[float], window: int = 20, stable_span:
     final_mean = float(np.mean(rewards[-window:]))
     if abs(final_mean) < 1e-8:
         return None
-    lower = final_mean * (1.0 - tolerance)
-    upper = final_mean * (1.0 + tolerance)
+    margin = abs(final_mean) * tolerance
+    lower, upper = final_mean - margin, final_mean + margin
     for index in range(len(rolling) - stable_span + 1):
         segment = rolling[index:index + stable_span]
         if bool(np.all(segment >= lower) and np.all(segment <= upper)):
@@ -68,7 +71,7 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
         best[algorithm] = _best_record(found)
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=False)
-    fig.suptitle("ElderCare AI: Best Training Reward by Algorithm")
+    fig.suptitle("ElderCare AI: Training returns of validation-selected policies")
     for ax, algorithm in zip(axes.flat, ALGORITHMS):
         record = best[algorithm]
         ax.set_title(algorithm.upper())
@@ -76,9 +79,9 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
         ax.set_ylabel("Cumulative reward")
         if record:
             rewards = record["episode_rewards"]
-            ax.plot(rewards, alpha=0.25, color="tab:blue")
+            ax.plot(np.arange(1, len(rewards) + 1), rewards, alpha=0.25, color="tab:blue")
             smoothed = rolling_mean(rewards, 10)
-            ax.plot(np.arange(len(smoothed)) + 9, smoothed, color="tab:red", linewidth=2)
+            ax.plot(np.arange(len(smoothed)) + min(10, len(rewards)), smoothed, color="tab:red", linewidth=2)
             ax.axhline(record["evaluation_mean_reward"], color="tab:green", linestyle="--", label="Evaluation mean")
             ax.legend(fontsize=8)
         else:
@@ -99,8 +102,8 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
             stds.append(record["evaluation_std_reward"])
     if names:
         ax.bar(names, means, yerr=stds, capsize=5, color=("#4C78A8", "#F58518", "#54A24B", "#B279A2"))
-        ax.set_ylabel("Held-out evaluation reward (mean ± SD)")
-        ax.set_title("Fair Cross-Algorithm Evaluation")
+        ax.set_ylabel("Validation reward (mean ± SD)")
+        ax.set_title("Validation reward of selected policies")
     fig.tight_layout()
     fig.savefig(assets / "evaluation_comparison.png", dpi=200)
     plt.close(fig)
@@ -139,12 +142,44 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
         fig.savefig(assets / f"{algorithm}_entropy.png", dpi=200)
         plt.close(fig)
 
+    for kind in ("stability", "convergence"):
+        fig, axes = plt.subplots(2, 2, figsize=(10, 6))
+        for ax, algorithm in zip(axes.flat, ALGORITHMS):
+            record = best[algorithm]
+            ax.set_title(algorithm.upper())
+            if record is None:
+                continue
+            if kind == "stability":
+                if algorithm == "dqn":
+                    values = record["training_losses"]
+                    x_label, y_label = "Optimizer update", "Smooth L1 loss"
+                else:
+                    values = record["policy_entropy"]
+                    x_label = "Rollout" if algorithm == "a2c" else "Episode"
+                    y_label = "Policy entropy (nats)"
+                smooth = rolling_mean(values, 20)
+                ax.plot(np.arange(len(smooth)) + min(20, len(values)), smooth)
+                ax.set(xlabel=x_label, ylabel=y_label)
+            else:
+                rewards = record["episode_rewards"]
+                smooth = rolling_mean(rewards, 20)
+                final_mean = float(np.mean(rewards[-20:]))
+                margin = abs(final_mean) * 0.05
+                ax.plot(np.arange(len(smooth)) + min(20, len(rewards)), smooth)
+                ax.axhspan(final_mean - margin, final_mean + margin, color="tab:green", alpha=0.2)
+                convergence = episodes_to_convergence(rewards)
+                if convergence is not None:
+                    ax.axvline(convergence, color="tab:orange", linestyle="--")
+                ax.set(xlabel="Episode", ylabel="20-episode mean")
+        fig.tight_layout()
+        fig.savefig(assets / f"{kind}_comparison.png", dpi=200)
+        plt.close(fig)
+
     summary = []
     for algorithm in ALGORITHMS:
         record = best[algorithm]
         if record:
             rewards = record["episode_rewards"]
-            rolling = rolling_mean(rewards, 20)
             stable_threshold = float(np.mean(rewards[-20:])) if len(rewards) >= 20 else float(np.mean(rewards))
             convergence_episode = episodes_to_convergence(rewards)
             summary.append({
@@ -156,6 +191,25 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
                 "episodes": len(rewards),
                 "convergence_episode": convergence_episode,
             })
+
+    all_runs = [
+        {
+            "algorithm": algorithm,
+            "run_id": record["run_id"],
+            "seed": record["seed"],
+            "episodes": len(record["episode_rewards"]),
+            "validation_mean": record["evaluation_mean_reward"],
+            "validation_sd": record["evaluation_std_reward"],
+            "config": json.dumps(record["config"], sort_keys=True),
+        }
+        for algorithm, runs in records.items()
+        for record in runs
+    ]
+    if all_runs:
+        with (assets / "all_runs_table.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=all_runs[0].keys())
+            writer.writeheader()
+            writer.writerows(all_runs)
 
     with (logs / "analysis_summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)

@@ -10,15 +10,18 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch import nn
-from torch.distributions import Categorical
+from torchrl.modules import MaskedCategorical
 
-from environment.custom_env import ElderCareEnv
+from environment.custom_env import ElderCareEnv, OBSERVATION_NAMES
+
+OBSERVATION_DIM = len(OBSERVATION_NAMES)
+EVALUATION_SEEDS = tuple(range(100_000, 100_020))
 
 
 class PolicyNet(nn.Module):
     def __init__(self, hidden_size: int = 64):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(8, hidden_size), nn.ReLU(), nn.Linear(hidden_size, 8))
+        self.net = nn.Sequential(nn.Linear(OBSERVATION_DIM, hidden_size), nn.ReLU(), nn.Linear(hidden_size, 8))
 
     def forward(self, observation: torch.Tensor) -> torch.Tensor:
         return self.net(observation)
@@ -27,13 +30,23 @@ class PolicyNet(nn.Module):
 class ActorCriticNet(nn.Module):
     def __init__(self, hidden_size: int = 64):
         super().__init__()
-        self.shared = nn.Sequential(nn.Linear(8, hidden_size), nn.ReLU())
+        self.shared = nn.Sequential(nn.Linear(OBSERVATION_DIM, hidden_size), nn.ReLU())
         self.actor = nn.Linear(hidden_size, 8)
         self.critic = nn.Linear(hidden_size, 1)
 
     def forward(self, observation: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         features = self.shared(observation)
         return self.actor(features), self.critic(features).squeeze(-1)
+
+
+def action_distribution(logits: torch.Tensor) -> MaskedCategorical:
+    return MaskedCategorical(
+        logits=logits, mask=torch.ones_like(logits, dtype=torch.bool), use_cross_entropy=False
+    )
+
+
+def sample_action(logits: torch.Tensor) -> int:
+    return int(torch.multinomial(logits.softmax(dim=-1), num_samples=1).item())
 
 
 def discount_returns(rewards: list[float], gamma: float) -> torch.Tensor:
@@ -57,25 +70,24 @@ def compute_gae(rewards: list[float], values: torch.Tensor, gamma: float, gae_la
     return advantages + values.detach(), advantages
 
 
-def evaluate_policy(policy, seeds: list[int], episodes_per_seed: int = 20) -> tuple[float, float]:
+def evaluate_policy(policy, seeds: tuple[int, ...] = EVALUATION_SEEDS) -> tuple[float, float]:
     rewards = []
     policy.eval()
     for seed in seeds:
-        for episode in range(episodes_per_seed):
-            env = ElderCareEnv()
-            obs, _ = env.reset(seed=seed * 1000 + episode)
-            total = 0.0
-            while True:
-                state = torch.tensor(obs, dtype=torch.float32)
-                with torch.no_grad():
-                    output = policy(state)
-                    logits = output[0] if isinstance(output, tuple) else output
-                    action = int(logits.argmax().item())
-                obs, reward, terminated, truncated, _ = env.step(action)
-                total += reward
-                if terminated or truncated:
-                    break
-            rewards.append(total)
+        env = ElderCareEnv()
+        obs, _ = env.reset(seed=seed)
+        total = 0.0
+        while True:
+            state = torch.tensor(obs, dtype=torch.float32)
+            with torch.no_grad():
+                output = policy(state)
+                logits = output[0] if isinstance(output, tuple) else output
+                action = int(logits.argmax().item())
+            obs, reward, terminated, truncated, _ = env.step(action)
+            total += reward
+            if terminated or truncated:
+                break
+        rewards.append(total)
     return float(np.mean(rewards)), float(np.std(rewards))
 
 
@@ -84,6 +96,7 @@ def train_reinforce(episodes: int, seed: int, config: dict) -> tuple[nn.Module, 
     np.random.seed(seed)
     torch.manual_seed(seed)
     env = ElderCareEnv()
+    env.action_space.seed(seed)
     policy = PolicyNet(config["hidden_size"])
     optimizer = torch.optim.Adam(policy.parameters(), lr=config["learning_rate"])
     episode_rewards = []
@@ -93,19 +106,17 @@ def train_reinforce(episodes: int, seed: int, config: dict) -> tuple[nn.Module, 
 
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
-        log_probs = []
-        rewards = []
-        entropies_episode = []
+        states, actions, rewards = [], [], []
         total = 0.0
 
-        for step in range(12):
-            logits = policy(torch.tensor(obs, dtype=torch.float32))
-            dist = Categorical(logits=logits)
-            action = int(dist.sample().item())
-            log_probs.append(dist.log_prob(torch.tensor(action)))
-            entropies_episode.append(float(dist.entropy().item()))
+        for step in range(env.max_steps):
+            state = torch.from_numpy(obs)
+            with torch.no_grad():
+                action = sample_action(policy(state))
+            states.append(state)
+            actions.append(action)
             obs, reward, terminated, truncated, _ = env.step(action)
-            rewards.append(float(reward))
+            rewards.append(reward)
             total += reward
             if terminated or truncated:
                 break
@@ -114,9 +125,10 @@ def train_reinforce(episodes: int, seed: int, config: dict) -> tuple[nn.Module, 
         if config["normalize_returns"] and len(returns) > 1:
             returns = (returns - returns.mean()) / (returns.std(unbiased=False) + 1e-8)
 
-        policy_loss = -torch.stack(log_probs) @ returns
-        entropy_loss = config["entropy_coefficient"] * sum(entropies_episode)
-        loss = policy_loss - entropy_loss
+        dist = action_distribution(policy(torch.stack(states)))
+        policy_loss = -(dist.log_prob(torch.tensor(actions)) * returns).sum()
+        entropy = dist.entropy().mean()
+        loss = policy_loss - config["entropy_coefficient"] * entropy
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(policy.parameters(), 10.0)
@@ -125,7 +137,7 @@ def train_reinforce(episodes: int, seed: int, config: dict) -> tuple[nn.Module, 
         episode_rewards.append(total)
         episode_lengths.append(step + 1)
         losses.append(float(loss.item()))
-        entropies.append(float(np.mean(entropies_episode)))
+        entropies.append(float(entropy.detach().item()))
 
     return policy, episode_rewards, losses, entropies, episode_lengths
 
@@ -135,6 +147,7 @@ def train_ppo(episodes: int, seed: int, config: dict) -> tuple[nn.Module, list[f
     np.random.seed(seed)
     torch.manual_seed(seed)
     env = ElderCareEnv()
+    env.action_space.seed(seed)
     model = ActorCriticNet(config["hidden_size"])
     optimizer = torch.optim.Adam(model.parameters(), lr=config["learning_rate"])
     episode_rewards = []
@@ -144,30 +157,29 @@ def train_ppo(episodes: int, seed: int, config: dict) -> tuple[nn.Module, list[f
 
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
-        states, actions, log_probs, rewards, values = [], [], [], [], []
+        states, actions, rewards = [], [], []
         total = 0.0
 
-        for step in range(12):
-            state = torch.tensor(obs, dtype=torch.float32)
-            logits, value = model(state)
-            dist = Categorical(logits=logits)
-            action = int(dist.sample().item())
+        for step in range(env.max_steps):
+            state = torch.from_numpy(obs)
+            with torch.no_grad():
+                logits, _ = model(state)
+                action = sample_action(logits)
             states.append(state)
             actions.append(action)
-            log_probs.append(dist.log_prob(torch.tensor(action)))
-            values.append(value)
-            entropies.append(float(dist.entropy().item()))
             obs, reward, terminated, truncated, _ = env.step(action)
-            rewards.append(float(reward))
+            rewards.append(reward)
             total += reward
             if terminated or truncated:
                 break
 
-        returns = discount_returns(rewards, config["gamma"])
         state_tensor = torch.stack(states)
         action_tensor = torch.tensor(actions, dtype=torch.long)
-        old_log_probs = torch.stack(log_probs).detach()
-        old_values = torch.stack(values).detach()
+        with torch.no_grad():
+            old_logits, old_values = model(state_tensor)
+            old_dist = action_distribution(old_logits)
+            old_log_probs = old_dist.log_prob(action_tensor)
+            entropies.append(float(old_dist.entropy().mean().item()))
         returns, advantages = compute_gae(
             rewards,
             old_values,
@@ -175,13 +187,12 @@ def train_ppo(episodes: int, seed: int, config: dict) -> tuple[nn.Module, list[f
             config["gae_lambda"],
         )
 
-        advantages = returns - old_values
         if config["normalize_advantages"]:
             advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
 
         for _ in range(config["epochs"]):
             logits, predicted_values = model(state_tensor)
-            dist = Categorical(logits=logits)
+            dist = action_distribution(logits)
             new_log_probs = dist.log_prob(action_tensor)
             ratio = (new_log_probs - old_log_probs).exp()
             clipped = torch.clamp(ratio, 1.0 - config["clip_epsilon"], 1.0 + config["clip_epsilon"])
@@ -206,9 +217,12 @@ def train_a2c(episodes: int, seed: int, config: dict) -> tuple[nn.Module, list[f
     np.random.seed(seed)
     torch.manual_seed(seed)
     env = ElderCareEnv()
+    env.action_space.seed(seed)
     model = ActorCriticNet(config["hidden_size"])
-    actor_optimizer = torch.optim.Adam(list(model.shared.parameters()) + list(model.actor.parameters()), lr=config["actor_learning_rate"])
-    critic_optimizer = torch.optim.Adam(list(model.critic.parameters()), lr=config["critic_learning_rate"])
+    optimizer = torch.optim.Adam([
+        {"params": list(model.shared.parameters()) + list(model.actor.parameters()), "lr": config["actor_learning_rate"]},
+        {"params": list(model.critic.parameters()), "lr": config["critic_learning_rate"]},
+    ])
     episode_rewards = []
     losses = []
     entropies = []
@@ -216,53 +230,66 @@ def train_a2c(episodes: int, seed: int, config: dict) -> tuple[nn.Module, list[f
 
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
-        states, actions, rewards, values = [], [], [], []
         total = 0.0
+        episode_length = 0
+        done = False
 
-        for step in range(config["rollout_length"]):
-            state = torch.tensor(obs, dtype=torch.float32)
-            logits, value = model(state)
-            dist = Categorical(logits=logits)
-            action = int(dist.sample().item())
-            states.append(state)
-            actions.append(action)
-            values.append(value)
-            entropies.append(float(dist.entropy().item()))
-            obs, reward, terminated, truncated, _ = env.step(action)
-            rewards.append(float(reward))
-            total += reward
-            if terminated or truncated:
-                break
+        while not done:
+            states, actions, rewards = [], [], []
+            for _ in range(config["rollout_length"]):
+                state = torch.from_numpy(obs)
+                with torch.no_grad():
+                    logits, _ = model(state)
+                    action = sample_action(logits)
+                states.append(state)
+                actions.append(action)
+                obs, reward, terminated, truncated, _ = env.step(action)
+                rewards.append(float(reward))
+                total += reward
+                episode_length += 1
+                done = terminated or truncated
+                if done:
+                    break
 
-        returns = discount_returns(rewards, config["gamma"])
-        state_tensor = torch.stack(states)
-        action_tensor = torch.tensor(actions, dtype=torch.long)
-        logits, predicted_values = model(state_tensor)
-        advantages = (returns - predicted_values.detach())
-        dist = Categorical(logits=logits)
-        log_probs = dist.log_prob(action_tensor)
+            if done:
+                bootstrap = torch.zeros((), dtype=torch.float32)
+            else:
+                with torch.no_grad():
+                    _, bootstrap = model(torch.tensor(obs, dtype=torch.float32))
 
-        actor_loss = -(log_probs * advantages).mean() - config["entropy_coefficient"] * dist.entropy().mean()
-        critic_loss = config["value_coefficient"] * nn.functional.mse_loss(predicted_values, returns)
+            returns = torch.zeros(len(rewards), dtype=torch.float32)
+            running_return = bootstrap.detach()
+            for index in range(len(rewards) - 1, -1, -1):
+                running_return = rewards[index] + config["gamma"] * running_return
+                returns[index] = running_return
 
-        actor_optimizer.zero_grad()
-        actor_loss.backward(retain_graph=True)
-        actor_optimizer.step()
+            state_tensor = torch.stack(states)
+            action_tensor = torch.tensor(actions, dtype=torch.long)
+            logits, predicted_values = model(state_tensor)
+            advantages = returns - predicted_values.detach()
+            dist = action_distribution(logits)
+            log_probs = dist.log_prob(action_tensor)
+            entropy = dist.entropy().mean()
+            actor_loss = -(log_probs * advantages).mean()
+            critic_loss = config["value_coefficient"] * nn.functional.mse_loss(predicted_values, returns)
+            loss = actor_loss + critic_loss - config["entropy_coefficient"] * entropy
 
-        critic_optimizer.zero_grad()
-        critic_loss.backward()
-        critic_optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+            optimizer.step()
+            losses.append(float(loss.item()))
+            entropies.append(float(entropy.detach().item()))
 
-        losses.append(float((actor_loss + critic_loss).item()))
         episode_rewards.append(total)
-        episode_lengths.append(step + 1)
+        episode_lengths.append(episode_length)
 
     return model, episode_rewards, losses, entropies, episode_lengths
 
 
 def save_pg_run(algorithm: str, run_id: int, seed: int, config: dict, result: tuple) -> dict:
     policy, rewards, losses, entropies, lengths = result
-    mean_reward, std_reward = evaluate_policy(policy, [seed + 10_000, seed + 20_000])
+    mean_reward, std_reward = evaluate_policy(policy)
     output = {
         "algorithm": algorithm, "run_id": run_id, "seed": seed, "config": config,
         "episode_rewards": rewards, "training_losses": losses,
@@ -338,7 +365,7 @@ def run_pg_experiments(algorithm: str, episodes: int, run_count: int, seed: int)
 
         output = save_pg_run(algorithm, run_id, seed + run_id * 100, config, result)
         runs.append(output)
-        print(f"[{algorithm.upper()} {run_id}/{run_count}] mean={output['evaluation_mean_reward']:.3f}")
+        print(f"[{algorithm.upper()} {run_id}/{run_count}] mean={output['evaluation_mean_reward']:.3f}", flush=True)
 
     log = Path("logs") / f"{algorithm}_experiments.csv"
     with log.open("w", newline="", encoding="utf-8") as handle:

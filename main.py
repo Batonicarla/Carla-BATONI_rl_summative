@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import math
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ElderCare AI reinforcement-learning project")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("smoke", help="Run short compatibility checks")
 
     demo = sub.add_parser("demo", help="Run one trained or random agent in the Pygame GUI")
-    demo.add_argument("--algorithm", choices=("random", "dqn", "reinforce", "ppo", "a2c"), default="random")
+    demo.add_argument("--algorithm", choices=("best", "random", "dqn", "reinforce", "ppo", "a2c"), default="best")
     demo.add_argument("--hold-seconds", type=float, default=30.0, help="Keep the final frame open for recording")
+
+    demo.add_argument("--seed", type=int, default=2026)
+    demo.add_argument("--step-seconds", type=float, default=0.5, help="Time to display each simulated hour")
 
     train = sub.add_parser("train", help="Train all algorithms")
     train.add_argument("--episodes", type=int, default=300, help="Episodes per hyperparameter run")
@@ -28,26 +31,42 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.command is None:
+        parser.print_help()
+        return
+    if args.command == "train" and (args.episodes < 1 or not 1 <= args.runs_per_algorithm <= 10):
+        parser.error("training requires at least one episode and 1 to 10 configurations")
+
+    if args.command == "demo" and any(
+        not math.isfinite(duration) or duration < 0
+        for duration in (args.step_seconds, args.hold_seconds)
+    ):
+        parser.error("demo durations must be finite and nonnegative")
+    if args.command in ("train", "demo") and args.seed < 0:
+        parser.error("seed must be nonnegative")
 
     if args.command == "smoke":
-        from tests.test_environment import test_action_and_observation_spaces, test_reset_is_seeded_and_reproducible
-        test_action_and_observation_spaces()
-        test_reset_is_seeded_and_reproducible()
         from torchrl.envs import GymWrapper
-        import gymnasium as gym
+
         from environment.custom_env import ElderCareEnv
+
         wrapped = GymWrapper(ElderCareEnv(), categorical_action_encoding=True)
-        td = wrapped.reset()
-        td = wrapped.rand_step(td)
-        print("Smoke test passed")
-        print(td)
+        try:
+            print(wrapped.rand_step(wrapped.reset()))
+            print("TorchRL smoke test passed")
+        finally:
+            wrapped.close()
 
     elif args.command == "test":
         import pytest
-        raise SystemExit(pytest.main(["-q"]))
+        raise SystemExit(pytest.main(["-q", "-p", "no:cacheprovider"]))
 
     elif args.command == "train":
+        import torch
+
+        torch.set_num_threads(1)
         from training.dqn_training import run_dqn_experiments
         from training.pg_training import run_pg_experiments
         run_dqn_experiments(args.episodes, args.runs_per_algorithm, args.seed)
@@ -58,96 +77,62 @@ def main() -> None:
     elif args.command == "demo":
         import time
         import pygame
-        import torch
 
         from environment.custom_env import ElderCareEnv
-        policy = None
-        if args.algorithm == "dqn":
-            csv_path = Path("logs/dqn_experiments.csv")
-            run_id = 3
-            if csv_path.exists():
-                import csv
-                with csv_path.open("r", encoding="utf-8", newline="") as handle:
-                    rows = list(csv.DictReader(handle))
-                if rows:
-                    run_id = int(max(rows, key=lambda row: float(row["evaluation_mean_reward"]))["run_id"])
-            checkpoint = Path(f"models/dqn/dqn_run_{run_id}.pt")
-            if not checkpoint.exists():
-                raise SystemExit(f"Missing best DQN checkpoint: {checkpoint}")
-            from training.dqn_training import QNetwork
-            policy = QNetwork(hidden_size=64)
-            policy.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
-            policy.eval()
-        elif args.algorithm in ("reinforce", "ppo", "a2c"):
-            csv_path = Path(f"logs/{args.algorithm}_experiments.csv")
-            run_id = 1
-            hidden_size = 64
-            if csv_path.exists():
-                import csv, json
-                with csv_path.open("r", encoding="utf-8", newline="") as handle:
-                    rows = list(csv.DictReader(handle))
-                if rows:
-                    best = max(rows, key=lambda row: float(row["evaluation_mean_reward"]))
-                    run_id = int(best["run_id"])
-                    hidden_size = int(json.loads(best["config"])["hidden_size"])
-            checkpoint = Path(f"models/pg/{args.algorithm}_run_{run_id}.pt")
-            if not checkpoint.exists():
-                raise SystemExit(f"Missing {args.algorithm.upper()} checkpoint: {checkpoint}")
-            if args.algorithm == "reinforce":
-                from training.pg_training import PolicyNet
-                policy = PolicyNet(hidden_size=hidden_size)
-            else:
-                from training.pg_training import ActorCriticNet
-                policy = ActorCriticNet(hidden_size=hidden_size)
-            policy.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
-            policy.eval()
-        elif args.algorithm == "random":
-            policy = None
-        else:
-            print(f"{args.algorithm.upper()} playback is not yet supported; using random actions.")
+        from training.evaluation import greedy_action, load_policy
 
+        algorithm, policy = load_policy(args.algorithm)
         env = ElderCareEnv(render_mode="human")
-        obs, info = env.reset(seed=2026)
-        cumulative = 0.0
-        while True:
-            if policy is None:
-                action = env.action_space.sample()
-            else:
-                with torch.no_grad():
-                    output = policy(torch.tensor(obs, dtype=torch.float32))
-                    logits = output[0] if isinstance(output, tuple) else output
-                    action = int(logits.argmax().item())
-            obs, reward, terminated, truncated, info = env.step(action)
-            cumulative += reward
+        env.action_space.seed(args.seed)
+        obs, info = env.reset(seed=args.seed)
+        print(f"Policy {algorithm.upper()} | episode seed {args.seed}", flush=True)
+        try:
             env.render()
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    env.close()
-                    return
-
-            if terminated or truncated:
-                print(f"Episode complete: cumulative reward={cumulative:.3f}")
-                print(f"The GUI will remain visible for {args.hold_seconds:.0f} seconds.")
-                held_until = time.monotonic() + args.hold_seconds
-                while time.monotonic() < held_until:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            env.close()
-                            return
-                    time.sleep(0.05)
-                break
-        env.close()
+            while True:
+                action = env.action_space.sample() if policy is None else greedy_action(policy, obs)
+                obs, reward, terminated, truncated, info = env.step(action)
+                status = "no prompt" if action == 0 else "declined" if info["rejected"] else "accepted"
+                print(
+                    f"Step {info['step']:02d}/{env.max_steps} | day {info['day']} {info['hour']:02d}:00 | "
+                    f"{info['last_action_name']} ({status}) | fit {info['action_fit']:.2f} | "
+                    f"reward {reward:+.3f} | total {info['cumulative_reward']:+.3f} | "
+                    f"wellbeing {info['wellbeing_mean']:.1%}",
+                    flush=True,
+                )
+                env.render()
+                finished = terminated or truncated
+                if finished:
+                    reason = "critical wellbeing threshold" if terminated else "end of the week"
+                    print(f"Episode finished at {reason}.", flush=True)
+                duration = args.hold_seconds if finished else args.step_seconds
+                deadline = time.monotonic() + duration
+                while True:
+                    if any(
+                        event.type in (pygame.QUIT, pygame.WINDOWCLOSE)
+                        for event in pygame.event.get()
+                    ):
+                        return
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(0.05, remaining))
+                    env.render()
+                if finished:
+                    break
+        finally:
+            env.close()
 
     elif args.command == "evaluate":
-        from training.analysis import generate_plots
-        result = generate_plots()
-        if not result["summary"]:
-            print("No trained experiment data found. Run 'uv run main.py train' first.")
-        else:
-            print("Best held-out evaluation records:")
-            for record in result["summary"]:
-                print(record)
+        from training.evaluation import evaluate_selected
+
+        for record in evaluate_selected():
+            print(
+                f"{record['algorithm'].upper():10}  "
+                f"return {record['mean_reward']:+.3f} (SD {record['reward_sd']:.3f})  "
+                f"wellbeing change {record['mean_wellbeing_change'] * 100:+.1f} pp  "
+                f"completed {record['completion_rate']:.0%}  "
+                f"declined {record['decline_rate_per_prompt']:.1%}"
+            )
 
     elif args.command == "plots":
         from training.analysis import generate_plots

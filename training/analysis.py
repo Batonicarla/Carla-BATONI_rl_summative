@@ -37,7 +37,7 @@ def rolling_mean(values: list[float], window: int = 10) -> np.ndarray:
 
 def episodes_to_convergence(rewards: list[float], window: int = 20, stable_span: int = 50, tolerance: float = 0.05) -> int | None:
     """Estimate convergence from a stable rolling mean near the final average."""
-    if len(rewards) < window + stable_span:
+    if len(rewards) < window + stable_span - 1:
         return None
     rolling = rolling_mean(rewards, window)
     final_mean = float(np.mean(rewards[-window:]))
@@ -102,7 +102,7 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
             stds.append(record["evaluation_std_reward"])
     if names:
         ax.bar(names, means, yerr=stds, capsize=5, color=("#4C78A8", "#F58518", "#54A24B", "#B279A2"))
-        ax.set_ylabel("Validation reward (mean ± SD)")
+        ax.set_ylabel("Validation reward (mean Â± SD)")
         ax.set_title("Validation reward of selected policies")
     fig.tight_layout()
     fig.savefig(assets / "evaluation_comparison.png", dpi=200)
@@ -189,7 +189,7 @@ def generate_plots(log_dir: str = "logs", output_dir: str = "assets") -> dict:
                 "evaluation_std_reward": record["evaluation_std_reward"],
                 "late_mean_reward": stable_threshold,
                 "episodes": len(rewards),
-                "convergence_episode": convergence_episode,
+                "convergence_episode": convergence_episode if convergence_episode is not None else "not_reached",
             })
 
     all_runs = [

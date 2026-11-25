@@ -1,0 +1,6 @@
+algorithm,run_id,seed,dominant_test_action,dominant_test_action_share,test_actions,l2_weight_change_from_initialization
+reinforce,1,142,Encourage hydration,1.0,4200,0.32333198194039203
+reinforce,7,742,Encourage hydration,1.0,4200,0.5165130966747905
+reinforce,10,1042,Encourage hydration,0.9985714285714286,4200,0.6163139302532389
+ppo,1,142,Suggest rest,0.5,4200,1.3450823806819387
+a2c,1,142,Suggest rest,0.5,4200,1.9155656244603314

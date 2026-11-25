@@ -14,7 +14,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     demo = sub.add_parser("demo", help="Run one trained or random agent in the Pygame GUI")
     demo.add_argument("--algorithm", choices=("best", "random", "dqn", "reinforce", "ppo", "a2c"), default="best")
-    demo.add_argument("--hold-seconds", type=float, default=30.0, help="Keep the final frame open for recording")
+    demo.add_argument("--hold-seconds", type=float, help="Auto-close after this many seconds at the end (default: wait for window close)")
 
     demo.add_argument("--seed", type=int, default=2026)
     demo.add_argument("--step-seconds", type=float, default=0.5, help="Time to display each simulated hour")
@@ -40,7 +40,7 @@ def main() -> None:
         parser.error("training requires at least one episode and 1 to 10 configurations")
 
     if args.command == "demo" and any(
-        not math.isfinite(duration) or duration < 0
+        duration is not None and (not math.isfinite(duration) or duration < 0)
         for duration in (args.step_seconds, args.hold_seconds)
     ):
         parser.error("demo durations must be finite and nonnegative")
@@ -105,7 +105,9 @@ def main() -> None:
                     reason = "critical wellbeing threshold" if terminated else "end of the week"
                     print(f"Episode finished at {reason}.", flush=True)
                 duration = args.hold_seconds if finished else args.step_seconds
-                deadline = time.monotonic() + duration
+                if finished and duration is None:
+                    print("Close the Pygame window when you are ready to exit.", flush=True)
+                deadline = math.inf if duration is None else time.monotonic() + duration
                 while True:
                     if any(
                         event.type in (pygame.QUIT, pygame.WINDOWCLOSE)

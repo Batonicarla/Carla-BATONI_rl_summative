@@ -6,7 +6,7 @@
     "evaluation_std_reward": 0.27921437455165427,
     "late_mean_reward": 0.9635293091759086,
     "episodes": 300,
-    "convergence_episode": null
+    "convergence_episode": "not_reached"
   },
   {
     "algorithm": "reinforce",
@@ -15,7 +15,7 @@
     "evaluation_std_reward": 0.2827825628960092,
     "late_mean_reward": -0.8241585618201641,
     "episodes": 300,
-    "convergence_episode": null
+    "convergence_episode": "not_reached"
   },
   {
     "algorithm": "ppo",
@@ -24,7 +24,7 @@
     "evaluation_std_reward": 0.29412657308032963,
     "late_mean_reward": 0.48303606808930616,
     "episodes": 300,
-    "convergence_episode": null
+    "convergence_episode": "not_reached"
   },
   {
     "algorithm": "a2c",
@@ -33,6 +33,6 @@
     "evaluation_std_reward": 0.25462545564452815,
     "late_mean_reward": 0.03839779812283809,
     "episodes": 300,
-    "convergence_episode": null
+    "convergence_episode": "not_reached"
   }
 ]

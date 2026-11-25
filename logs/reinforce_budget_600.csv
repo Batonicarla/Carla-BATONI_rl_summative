@@ -1,0 +1,3 @@
+mode,source_run_id,training_seed,training_episodes,training_interactions,validation_greedy_mean,validation_greedy_sd,convergence_episode,algorithm,episodes,mean_reward,reward_sd,mean_wellbeing_change,completion_rate,decline_rate_per_prompt
+greedy,8,842,600,50400,-0.5776544546633959,0.27902215729281066,not_reached,reinforce,50,-0.5565731261581182,0.3238867767150804,0.13440738558769227,1.0,0.2211904761904762
+sampled,8,842,600,50400,-0.5776544546633959,0.27902215729281066,not_reached,reinforce,50,-0.057193644173443296,0.46076384480064886,0.36044129490852356,1.0,0.22525510204081634

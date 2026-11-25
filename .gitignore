@@ -10,6 +10,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Local Canvas files and video recordings
+/submission/
+/recordings/
+
 # OS/editor
 .DS_Store
 Thumbs.db

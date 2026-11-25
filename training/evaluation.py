@@ -7,9 +7,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from environment.custom_env import ElderCareEnv
+from environment.custom_env import ElderCareEnv, OBSERVATION_NAMES
 
 TEST_SEEDS = range(200_000, 200_050)
+PREVIOUS_ACTION_OFFSET = OBSERVATION_NAMES.index('previous_action_0')
 
 
 def load_policy(algorithm: str):
@@ -92,6 +93,12 @@ def write_results(filename, results):
         writer.writerows(results)
 
 
+def max_fit_without_repeat(env, observation, generator) -> int:
+    previous_actions = observation[PREVIOUS_ACTION_OFFSET:PREVIOUS_ACTION_OFFSET + env.action_space.n]
+    candidates = (action for action in range(env.action_space.n) if not previous_actions[action])
+    return max(candidates, key=env._action_fit)
+
+
 def evaluate_selected():
     results = []
     diagnostics = []
@@ -107,6 +114,8 @@ def evaluate_selected():
     diagnostics.append(evaluate_behavior(
         "max_fit_oracle", lambda env, obs, rng: max(range(env.action_space.n), key=env._action_fit)
     ))
+    diagnostics.append(evaluate_behavior("max_fit_no_repeat", max_fit_without_repeat))
+    diagnostics.append(evaluate_behavior("always_hydration", lambda env, obs, rng: 1))
     diagnostics.append(evaluate_behavior("no_prompt", lambda env, obs, rng: 0))
     write_results("test_evaluation.csv", results)
     write_results("evaluation_diagnostics.csv", diagnostics)
